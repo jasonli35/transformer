@@ -90,8 +90,9 @@ class Encoder(nn.Module):
         pos_emb = self.position_embedding(torch.arange(T, device=self.device))
         x = tok_emb + pos_emb
         attention_maps = []
+        
         for block in self.blocks:
             x, att_map = block(x)
-            attention_maps.append(att_map)
+            attention_maps = attention_maps + list(att_map)
 
-        return torch.mean(x, dim=-2), attention_maps[0]
+        return torch.mean(x, dim=-2), attention_maps
