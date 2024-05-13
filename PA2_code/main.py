@@ -126,7 +126,7 @@ def main():
     train_LM_loader = DataLoader(train_LM_dataset, batch_size=batch_size, shuffle=True)
 
      # for the classification  task, you will train for a fixed number of epochs like this:
-    model = FeedForwardClassifier(vocab_size, n_embd, block_size, n_layer, n_head, device, n_input, n_hidden, n_output)
+    model = FeedForwardClassifier(vocab_size=vocab_size, n_embd=n_embd, block_size=block_size, n_layer=n_layer, n_head=n_head, device=device, ff_input=n_input, ff_n_hidden=n_hidden, ff_n_output=n_output)
     encoder_model = Encoder(vocab_size, n_embd, block_size, n_layer, n_head, device)
     utility = Utilities(tokenizer, encoder_model)
     utility.sanity_check(sentence="This afternoon, I spoke to former President George W. Bush.", block_size=block_size)

@@ -68,8 +68,8 @@ class Block(nn.Module):
         self.ln2 = nn.LayerNorm(n_embd)
 
     def forward(self, x):
-        x, attension_map =self.sa(x)
-        x = x + self.ln1(x)
+        x_after_head, attension_map =self.sa(x)
+        x = x + self.ln1(x_after_head)
         x = x + self.ln2(self.ffwd(x))
         return x, attension_map
 
@@ -80,7 +80,7 @@ class Encoder(nn.Module):
         self.device = device
         self.token_embedding = nn.Embedding(vocab_size, n_embd)
         self.position_embedding= nn.Embedding(block_size, n_embd)
-        self.blocks = [Block(n_embd, n_head) for _ in range(n_layer)]
+        self.blocks = nn.ModuleList([Block(n_embd, n_head) for _ in range(n_layer)])
         # self.blocks = nn.Sequential(*[Block(n_embd, n_head=n_head) for _ in range(n_layer)])
 
         
