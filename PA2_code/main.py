@@ -5,7 +5,10 @@ import os
 
 from tokenizer import SimpleTokenizer
 from dataset import SpeechesClassificationDataset, LanguageModelingDataset
-
+from classifier import FeedForwardClassifier
+from torch import nn
+from utilities import Utilities
+from transformer import Encoder
 
 seed = 42
 
@@ -99,15 +102,21 @@ def compute_perplexity(decoderLMmodel, data_loader, eval_iters=100):
     decoderLMmodel.train()
     return perplexity
 
+
+
 def main():
 
     print("Loading data and creating tokenizer ...")
     texts = load_texts('speechesdataset')
     tokenizer = SimpleTokenizer(' '.join(texts)) # create a tokenizer from the data
-    print("Vocabulary size is", tokenizer.vocab_size)
+    vocab_size = tokenizer.vocab_size
+    print("Vocabulary size is", vocab_size)
 
     train_CLS_dataset = SpeechesClassificationDataset(tokenizer, "speechesdataset/train_CLS.tsv")
     train_CLS_loader = DataLoader(train_CLS_dataset, batch_size=batch_size,collate_fn=collate_batch,shuffle=True)
+
+    test_CLS_dataset = SpeechesClassificationDataset(tokenizer, "speechesdataset/test_CLS.tsv")
+    test_CLS_loader = DataLoader(test_CLS_dataset, batch_size=batch_size,collate_fn=collate_batch,shuffle=True)
 
   
     inputfile = "speechesdataset/train_LM.txt"
@@ -117,10 +126,41 @@ def main():
     train_LM_loader = DataLoader(train_LM_dataset, batch_size=batch_size, shuffle=True)
 
      # for the classification  task, you will train for a fixed number of epochs like this:
+    model = FeedForwardClassifier(vocab_size, n_embd, block_size, n_layer, n_head, device, n_input, n_hidden, n_output)
+    encoder_model = Encoder(vocab_size, n_embd, block_size, n_layer, n_head, device)
+    utility = Utilities(tokenizer, encoder_model)
+    utility.sanity_check(sentence="This afternoon, I spoke to former President George W. Bush.", block_size=block_size)
+    
+    m = model.to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+    loss_fn = nn.NLLLoss()
+    print(sum(p.numel() for p in m.parameters())/1e6, 'M parameters')
+    size = len(train_LM_loader.dataset)
+    num_batches = len(train_LM_loader)
+
     for epoch in range(epochs_CLS):
+        
+        model.train()
+
+        train_loss, correct = 0, 0
         for xb, yb in train_CLS_loader:
             xb, yb = xb.to(device), yb.to(device)
             # CLS training code here
+            
+            pred = model(xb)
+            loss = loss_fn(pred, yb)
+            train_loss += loss.item()
+            correct += (pred.argmax(1) == yb).type(torch.float).sum().item()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        average_train_loss = train_loss / num_batches
+        accuracy = correct / size
+        if epoch == 0 or epoch == 14:
+            test_accuracy =compute_classifier_accuracy(model, test_CLS_loader)
+            print(f"step {epoch + 1}: train loss {average_train_loss:.4f}, train accuracy {accuracy:.4f}, test accuracy {test_accuracy:.4f}")
+
+
 
 
     # for the language modeling task, you will iterate over the training data for a fixed number of iterations like this:
@@ -131,8 +171,5 @@ def main():
         # LM training code here
 
     
-
-
-
 if __name__ == "__main__":
     main()
