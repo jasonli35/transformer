@@ -8,10 +8,12 @@ from dataset import SpeechesClassificationDataset, LanguageModelingDataset
 from classifier import FeedForwardClassifier
 from torch import nn
 from utilities import Utilities
-from transformer import Encoder
+from transformer import Transformer
+from LM import LanguageModel
 
 seed = 42
-
+torch.manual_seed(seed)
+torch.cuda.manual_seed_all(seed)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 """ Hyperparameters to use for training to roughly match 
@@ -87,6 +89,7 @@ def compute_perplexity(decoderLMmodel, data_loader, eval_iters=100):
     """
     decoderLMmodel.eval()
     losses= []
+    total_loss = 0
     for X, Y in data_loader:
         X, Y = X.to(device), Y.to(device)
         loss = decoderLMmodel(X, Y) # your model should be computing the cross entropy loss
@@ -102,7 +105,16 @@ def compute_perplexity(decoderLMmodel, data_loader, eval_iters=100):
     decoderLMmodel.train()
     return perplexity
 
+def getAccuracy(name, tokenizer, language_model):
 
+    inputfile = "speechesdataset/test_LM_" + name + ".txt"
+
+    with open(inputfile, 'r', encoding='utf-8') as f:
+        lmtest_Text = f.read()
+    
+    test_LM_bush__dataset = LanguageModelingDataset(tokenizer, lmtest_Text, block_size)
+    test_bushH_loader = DataLoader(test_LM_bush__dataset, batch_size=batch_size,shuffle=True)
+    print(name + ": ", compute_perplexity(language_model, test_bushH_loader))
 
 def main():
 
@@ -127,48 +139,67 @@ def main():
 
      # for the classification  task, you will train for a fixed number of epochs like this:
     model = FeedForwardClassifier(vocab_size=vocab_size, n_embd=n_embd, block_size=block_size, n_layer=n_layer, n_head=n_head, device=device, ff_input=n_input, ff_n_hidden=n_hidden, ff_n_output=n_output)
-    encoder_model = Encoder(vocab_size, n_embd, block_size, n_layer, n_head, device)
-    utility = Utilities(tokenizer, encoder_model)
-    utility.sanity_check(sentence="This afternoon, I spoke to former President George W. Bush.", block_size=block_size)
+    encoder_model = Transformer(vocab_size, n_embd, block_size, n_layer, n_head, device)
+    # utility = Utilities(tokenizer, encoder_model)
+    # utility.sanity_check(sentence="This afternoon, I spoke to former President George W. Bush.", block_size=block_size)
     
     m = model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     loss_fn = nn.NLLLoss()
     print(sum(p.numel() for p in m.parameters())/1e6, 'M parameters')
-    size = len(train_LM_loader.dataset)
-    num_batches = len(train_LM_loader)
+    size = len(train_CLS_loader.dataset)
+    num_batches = len(train_CLS_loader)
 
-    for epoch in range(epochs_CLS):
+    # for epoch in range(epochs_CLS):
         
-        model.train()
+    #     model.train()
 
-        train_loss, correct = 0, 0
-        for xb, yb in train_CLS_loader:
-            xb, yb = xb.to(device), yb.to(device)
-            # CLS training code here
+    #     train_loss, correct = 0, 0
+    #     for xb, yb in train_CLS_loader:
+    #         xb, yb = xb.to(device), yb.to(device)
+    #         # CLS training code here
             
-            pred = model(xb)
-            loss = loss_fn(pred, yb)
-            train_loss += loss.item()
-            correct += (pred.argmax(1) == yb).type(torch.float).sum().item()
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-        average_train_loss = train_loss / num_batches
-        accuracy = correct / size
-        if epoch == 0 or epoch == 14:
-            test_accuracy =compute_classifier_accuracy(model, test_CLS_loader)
-            print(f"step {epoch + 1}: train loss {average_train_loss:.4f}, train accuracy {accuracy:.4f}, test accuracy {test_accuracy:.4f}")
+    #         pred = model(xb)
+    #         loss = loss_fn(pred, yb)
+    #         train_loss += loss.item()
+    #         correct += (pred.argmax(1) == yb).type(torch.float).sum().item()
+    #         optimizer.zero_grad()
+    #         loss.backward()
+    #         optimizer.step()
+    #     average_train_loss = train_loss / num_batches
+    #     accuracy = correct / size
+    #     if epoch == 0 or epoch == 14:
+    #         test_accuracy =compute_classifier_accuracy(model, test_CLS_loader)
+    #         print(f"step {epoch + 1}: train loss {average_train_loss:.4f}, train accuracy {accuracy:.4f}, test accuracy {test_accuracy:.4f}")
 
-
-
+    encoder_model = Transformer(vocab_size=vocab_size, n_embd=n_embd, block_size=block_size, n_layer=n_layer, n_head=n_head, device=device, isDecoder = True)
+    lm_utility = Utilities(tokenizer, encoder_model)
+    lm_utility.sanity_check(sentence="It is costly and politically difficult to continue this conflict.", block_size=block_size)
+    
+    language_model = LanguageModel(vocab_size, n_embd, block_size,n_layer, n_head, device)
+    optimizer = torch.optim.AdamW(language_model.parameters(), lr=learning_rate)
 
     # for the language modeling task, you will iterate over the training data for a fixed number of iterations like this:
     for i, (xb, yb) in enumerate(train_LM_loader):
         if i >= max_iters:
             break
+
         xb, yb = xb.to(device), yb.to(device)
         # LM training code here
+        loss = language_model(xb, yb)
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        optimizer.step()
+        
+        epoch = i + 1
+        if(epoch  % 100 == 0):
+            print(print(f"step {epoch}: train perplexity {compute_perplexity(language_model, train_LM_loader):.4f}"))
+
+    getAccuracy("hbush", tokenizer, language_model)
+    getAccuracy("obama", tokenizer, language_model)
+    getAccuracy("wbush", tokenizer, language_model)
+
+
 
     
 if __name__ == "__main__":
